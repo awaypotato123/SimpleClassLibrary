@@ -1,0 +1,54 @@
+trigger:
+- master
+
+pool:
+  name: 'Default'  # Your self-hosted Windows agent
+
+variables:
+  buildConfiguration: 'Release'
+  outputDir: '$(Build.ArtifactStagingDirectory)'
+  versionPrefix: '1.0.0'
+  versionSuffix: 'ci-$(Build.BuildId)'  # Unique per pipeline run
+
+steps:
+- checkout: self
+  persistCredentials: true
+
+# Install NuGet CLI
+- task: NuGetToolInstaller@1
+  inputs:
+    versionSpec: '6.13.2'
+
+# Install .NET 8 SDK
+- task: UseDotNet@2
+  inputs:
+    packageType: 'sdk'
+    version: '8.x'
+    installationPath: $(Agent.ToolsDirectory)/dotnet
+
+# Authenticate with Azure Artifacts
+- task: NuGetAuthenticate@1
+  displayName: 'Authenticate with Azure Artifacts Feed'
+
+# Restore dependencies
+- script: dotnet restore
+  displayName: 'Restore Project'
+
+# Build project
+- script: dotnet build --configuration $(buildConfiguration)
+  displayName: 'Build Project'
+
+# ✅ Pack the project with dynamic version to avoid upstream conflicts
+- script: dotnet pack --configuration $(buildConfiguration) --output "$(outputDir)" /p:Version=$(versionPrefix)-$(versionSuffix)
+  displayName: 'Pack NuGet Package with Unique Version'
+
+# List output directory to verify the .nupkg file
+- script: dir "$(outputDir)"
+  displayName: 'Verify NuGet Package Exists'
+
+# Push the NuGet package to Azure Artifacts (skip if duplicate)
+- script: dotnet nuget push "$(outputDir)\*.nupkg" --source "https://pkgs.dev.azure.com/rahmed70/Lab4/_packaging/lab_feed/nuget/v3/index.json" --api-key VSTS --skip-duplicate
+  displayName: 'Push NuGet Package to Azure Artifacts'
+
+
+ 
